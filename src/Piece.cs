@@ -6,7 +6,9 @@ public abstract class Piece
     public abstract char AsciiSymbol { get; }
     public abstract int Value { get; }
     
-    //These moves can be illegal in the sense that they leave the king in check
+    /// <summary>
+    /// A pseudo-legal move is defined as an otherwise legal move that may leave the king in check.
+    /// </summary>
     public abstract IEnumerable<Move> GetPseudoLegalMoves(Board board, Coordinate from);
     public abstract IEnumerable<Move> GetAttackingSquares(Board board, Coordinate from);
     
@@ -51,8 +53,8 @@ public abstract class Piece
     }
     
     public abstract Piece Clone();
-          
 }
+
 public enum PieceColor
 {
     White,

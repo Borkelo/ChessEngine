@@ -1,5 +1,7 @@
 ﻿using System.Text;
-class Program
+
+// Not recommended. Move Mode enum to separate publicly-accessible place.
+public class Program
 {
     public static bool UseUnicodeSymbols { get; set; } = true;
     static int defaultDepth = 4;
@@ -22,6 +24,9 @@ Available commands:
     use unicode
         Displays pieces using Unicode symbols: ♚ ♛ ♜ ♝ ♞ ♟
 
+    gui <MODE> <FEN>
+        NYI
+
     clear
         Clears the console screen
 
@@ -32,6 +37,7 @@ Available commands:
         Exits the program
     ";
 
+    [STAThread]
     static void Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -75,7 +81,6 @@ Available commands:
                 string FEN = string.Join(" ", inputSplit.Skip(2));
                 StartGame(mode, FEN);
             }
-                
         }
         else if(inputLower == "clear")
         {
@@ -129,6 +134,30 @@ Available commands:
             {
                 Console.WriteLine("Invalid depth");
             }
+        }
+        else if (inputLower == "gui")
+        {
+            LaunchGUI(Mode.pVe, Board.DefaultFEN, PieceColor.White);
+        }
+        else if (inputLower.StartsWith("gui "))
+        {
+            string[] parts = input.Split(' ');
+            Mode mode = Mode.pVe;
+            PieceColor? humanSide = null;
+
+            if (parts.Length > 1)
+            {
+                char m = parts[1][0];
+                mode = GetMode(m);
+
+                if (mode == Mode.pVe)
+                {
+                    humanSide = m == 'b' ? PieceColor.Black : PieceColor.White;
+                }
+            }
+
+            string fen = parts.Length > 2 ? string.Join(" ", parts.Skip(2)) : Board.DefaultFEN;
+            LaunchGUI(mode, fen, humanSide);
         }
         else
         {
@@ -422,7 +451,6 @@ Available commands:
         return true;     
     }
 
-    
     static void DrawBoard(string input)
     {
         try
@@ -438,7 +466,29 @@ Available commands:
             Console.WriteLine(e);
         }
     }
-    
+
+    [STAThread]
+    static void LaunchGUI()
+    {
+        LaunchGUI(mode: Mode.pVe);
+    }
+
+    [STAThread]
+    static void LaunchGUI(Mode mode = Mode.pVe, string fen = Board.DefaultFEN, PieceColor? side = null)
+    {
+        Application.EnableVisualStyles();
+        
+        try
+        {
+            Board board = new(fen);
+            Application.Run(new GraphicalBoard(board, mode, side));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting up board: {ex.Message}");
+        }
+    }
+
     static Mode GetMode(char c)
     {
         return c.ToString().ToLower() switch
@@ -451,7 +501,7 @@ Available commands:
         };
     }
     
-    enum Mode
+    public enum Mode
     {
         pVp,
         pVe,

@@ -1,12 +1,5 @@
-
-public class Engine
+public class Engine(int depth)
 {
-    int Depth { get; set; }
-
-    public Engine(int depth)
-    {
-        Depth = depth;
-    }
     static readonly Coordinate[] centerSquares =
     {
         new(3, 3),
@@ -32,7 +25,7 @@ public class Engine
             //GameLogic.ApplyMove(tempBoard, move);
             GameLogic.ApplyMove(board, move);
 
-            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, board.CurrentTurn, rootSide);
+            float score = AlphaBeta(board, depth - 1, float.MinValue, float.MaxValue, board.CurrentTurn, rootSide);
             //Console.WriteLine($"Move {move} scored {score}");
             if(score > bestScore)
             {
@@ -47,7 +40,7 @@ public class Engine
         return bestMove ?? throw new Exception("No legal moves found");
     }
     
-    float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor side, PieceColor rootSide)
+    private float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor side, PieceColor rootSide)
     {
         if(depth == 0 || GameLogic.IsGameOver(board))
             return Evaluate(board, rootSide);
@@ -100,7 +93,7 @@ public class Engine
         }
     }
     
-    float Evaluate(Board board, PieceColor side)
+    private static float Evaluate(Board board, PieceColor side)
     {
         if(GameLogic.IsCheckmate(board))
             return board.CurrentTurn == side ? -10000 : 10000;
@@ -118,13 +111,13 @@ public class Engine
         finalScore -= GetAttackedSquaresScore(board, PieceColor.Black);
         finalScore += GetCenterPawnScore(board, PieceColor.White);
         finalScore -= GetCenterPawnScore(board, PieceColor.Black);
-        finalScore += GetKingFafetyScore(board, PieceColor.White);
-        finalScore -= GetKingFafetyScore(board, PieceColor.Black);
+        finalScore += GetKingSafetyScore(board, PieceColor.White);
+        finalScore -= GetKingSafetyScore(board, PieceColor.Black);
         
         return side == PieceColor.White ? finalScore : -finalScore; 
     }
     
-    float GetAttackedSquaresScore(Board board, PieceColor side)
+    private static float GetAttackedSquaresScore(Board board, PieceColor side)
     {
         float score = 0;
         
@@ -135,7 +128,7 @@ public class Engine
         return score;
     }
     
-    float GetCenterPawnScore(Board board, PieceColor side)
+    private static float GetCenterPawnScore(Board board, PieceColor side)
     {
         float score = 0;
         
@@ -148,7 +141,7 @@ public class Engine
         return score;
     }
     
-    float GetKingFafetyScore(Board board, PieceColor side)
+    private static float GetKingSafetyScore(Board board, PieceColor side)
     {
         if(side == PieceColor.White)
         {

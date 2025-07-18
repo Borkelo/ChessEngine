@@ -229,6 +229,7 @@ public class Board
         FullmoveCounter = entry.PreviousFullmoveCounter;
         CurrentTurn = entry.PreviousTurn;
     }
+
     public void Draw()
     {
         for (int row = 7; row >= 0; row--)
@@ -297,17 +298,18 @@ public class Board
     //Call before applying move
     public static void GenerateMoveHinstoryEntry(Board board, Move move)
     {
-        MoveHistoryEntry entry = new();
-        
-        entry.Move = move;
-        entry.CapturedPiece = board.pieces[move.To.Col, move.To.Row];
-        entry.IsPromotion = board.pieces[move.From.Col, move.From.Row] is Pawn && (move.To.Row == 0 || move.To.Row == 7);
-        entry.OriginalHasMoved = board.pieces[move.From.Col, move.From.Row]!.HasMoved;
-        entry.PreviousEnPassant = board.EnPassantCoordinate;
-        entry.PreviousHalfmoveClock = board.HalfmoveClock;
-        entry.PreviousFullmoveCounter = board.FullmoveCounter;
-        entry.PreviousTurn = board.CurrentTurn;
-        
+        MoveHistoryEntry entry = new()
+        {
+            Move = move,
+            CapturedPiece = board.pieces[move.To.Col, move.To.Row],
+            IsPromotion = board.pieces[move.From.Col, move.From.Row] is Pawn && (move.To.Row == 0 || move.To.Row == 7),
+            OriginalHasMoved = board.pieces[move.From.Col, move.From.Row]!.HasMoved,
+            PreviousEnPassant = board.EnPassantCoordinate,
+            PreviousHalfmoveClock = board.HalfmoveClock,
+            PreviousFullmoveCounter = board.FullmoveCounter,
+            PreviousTurn = board.CurrentTurn
+        };
+
         board.moveHistory.Push(entry);
     }
   
