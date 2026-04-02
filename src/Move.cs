@@ -1,8 +1,14 @@
-public readonly struct Move(Coordinate from, Coordinate to)
+public struct Move
 {
-    public Coordinate From { get; } = from;
-    public Coordinate To { get; } = to;
-
+    public Coordinate From { get; }
+    public Coordinate To { get; }
+    
+    public Move(Coordinate from, Coordinate to)
+    {
+        From = from;
+        To = to;      
+    }
+    
     public override readonly string ToString() => $"{From} > {To}";
     
     public static bool operator ==(Move a, Move b)

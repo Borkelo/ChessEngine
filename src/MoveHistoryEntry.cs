@@ -8,4 +8,5 @@ public class MoveHistoryEntry
     public int PreviousHalfmoveClock { get; set; }
     public int PreviousFullmoveCounter { get; set; }
     public PieceColor PreviousTurn { get; set; }
+    
 }

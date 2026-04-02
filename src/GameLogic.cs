@@ -2,6 +2,7 @@ public static class GameLogic
 {
     public static void ApplyMove(Board board, Move move, char promotionPieceSymbol = 'q') //THIS METHOD APPLIES MOVE EVEN IF ITS ILLEGAL
     {
+
         Board.GenerateMoveHinstoryEntry(board, move);                  
         Piece pieceToMove = board.pieces[move.From.Col, move.From.Row]!;
         Piece? pieceToCapture = board.pieces[move.To.Col, move.To.Row];
@@ -223,7 +224,6 @@ public static class GameLogic
             
         return false;
     }
-
     public static bool IsOnBoard(Coordinate coord)
     {
         return coord.Col is >= 0 and <= 7 && coord.Row is >= 0 and <= 7;
