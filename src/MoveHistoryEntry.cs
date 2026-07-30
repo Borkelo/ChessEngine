@@ -1,4 +1,6 @@
-public class MoveHistoryEntry
+// Stored for every make/unmake operation during search. A value type keeps the
+// search from allocating one heap object per pseudo-legal move.
+public struct MoveHistoryEntry
 {
     public Move Move { get; set; }
     public Piece? CapturedPiece { get; set; } //This is null in en passant captures

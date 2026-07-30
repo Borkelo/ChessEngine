@@ -4,6 +4,8 @@ public class Engine
     const int MaxTranspositionEntries = 250_000;
     const float MateScore = 100_000;
     readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new(MaxTranspositionEntries);
+    readonly Move?[,] killerMoves = new Move?[128, 2];
+    readonly int[,,] historyScores = new int[2, 64, 64];
     int Depth { get; set; }
 
     public Engine(int depth)
@@ -32,12 +34,13 @@ public class Engine
     public Move GetBestMove(Board board)
     {
         transpositionTable.Clear();
+        Array.Clear(killerMoves);
         Move? bestMove = null;
         float bestScore = float.MinValue;
         
         PieceColor rootSide = board.CurrentTurn;
         List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
-        OrderMoves(board, legalMoves, null);
+        OrderMoves(board, legalMoves, null, 0);
         
         foreach(Move move in legalMoves)
         {
@@ -45,7 +48,7 @@ public class Engine
             //GameLogic.ApplyMove(tempBoard, move);
             GameLogic.ApplyMove(board, move);
 
-            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, rootSide);
+            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, rootSide, 1);
             //Console.WriteLine($"Move {move} scored {score}");
             if(score > bestScore)
             {
@@ -60,7 +63,7 @@ public class Engine
         return bestMove ?? throw new Exception("No legal moves found");
     }
     
-    float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor rootSide)
+    float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor rootSide, int ply)
     {
         ulong positionKey = GetPositionKey(board);
         Move? hashMove = null;
@@ -87,6 +90,19 @@ public class Engine
         float originalAlpha = alpha;
         float originalBeta = beta;
 
+        // Most leaf nodes are ordinary positions. Evaluating them directly avoids
+        // generating and testing every legal move merely to prove they are not mate.
+        // Checks are extended by one ply so a checkmate at the horizon is still seen.
+        if (depth == 0 && !GameLogic.IsCheck(board, board.CurrentTurn))
+        {
+            float score = Evaluate(board, rootSide);
+            Store(positionKey, new(depth, score, Bound.Exact, default, false));
+            return score;
+        }
+
+        if (depth == 0)
+            depth = 1;
+
         // Generate once per node. Previously, IsGameOver and Evaluate could each
         // generate the full legal-move list before the search generated it again.
         List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
@@ -101,14 +117,7 @@ public class Engine
             return score;
         }
 
-        if (depth == 0)
-        {
-            float score = Evaluate(board, rootSide);
-            Store(positionKey, new(depth, score, Bound.Exact, default, false));
-            return score;
-        }
-
-        OrderMoves(board, legalMoves, hashMove);
+        OrderMoves(board, legalMoves, hashMove, ply);
 
         Move bestMove = default;
         bool hasBestMove = false;
@@ -120,7 +129,7 @@ public class Engine
             foreach (Move move in legalMoves)
             {
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide);
+                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
                 board.Undo();
                 if (eval > maxEval)
                 {
@@ -131,7 +140,10 @@ public class Engine
                 alpha = Math.Max(alpha, eval);                 
         
                 if(beta <= alpha)
+                {
+                    RecordCutoff(board, move, depth, ply);
                     break;
+                }
                 
             }
 
@@ -144,7 +156,7 @@ public class Engine
             foreach (Move move in legalMoves)
             {
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide);
+                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
                 board.Undo();
                 if (eval < minEval)
                 {
@@ -155,7 +167,10 @@ public class Engine
                 beta = Math.Min(beta, eval);
                 
                 if(beta <= alpha)
+                {
+                    RecordCutoff(board, move, depth, ply);
                     break;
+                }
                   
             }
 
@@ -246,12 +261,12 @@ public class Engine
         return 0;
     }
 
-    void OrderMoves(Board board, List<Move> moves, Move? hashMove)
+    void OrderMoves(Board board, List<Move> moves, Move? hashMove, int ply)
     {
-        moves.Sort((a, b) => ScoreMove(board, b, hashMove).CompareTo(ScoreMove(board, a, hashMove)));
+        moves.Sort((a, b) => ScoreMove(board, b, hashMove, ply).CompareTo(ScoreMove(board, a, hashMove, ply)));
     }
 
-    static int ScoreMove(Board board, Move move, Move? hashMove)
+    int ScoreMove(Board board, Move move, Move? hashMove, int ply)
     {
         if (hashMove.HasValue && move == hashMove.Value)
             return int.MaxValue;
@@ -264,17 +279,50 @@ public class Engine
             ? movingPiece is Pawn && board.EnPassantCoordinate == move.To ? 1 : 0
             : Math.Abs(capturedPiece.Value);
 
-        int score = capturedValue == 0 ? 0 : capturedValue * 100 - Math.Abs(movingPiece.Value);
+        int score = capturedValue == 0 ? 0 : 1_000_000 + capturedValue * 100 - Math.Abs(movingPiece.Value);
 
         if (movingPiece is Pawn && move.To.Row is 0 or 7)
-            score += 800;
+            score += 900_000;
 
-        return score;
+        if (score != 0)
+            return score;
+
+        if (ply < killerMoves.GetLength(0))
+        {
+            if (killerMoves[ply, 0] == move)
+                return 800_000;
+            if (killerMoves[ply, 1] == move)
+                return 799_999;
+        }
+
+        int side = board.CurrentTurn == PieceColor.White ? 0 : 1;
+        return historyScores[side, move.From.Row * 8 + move.From.Col, move.To.Row * 8 + move.To.Col];
+
+    }
+
+    void RecordCutoff(Board board, Move move, int depth, int ply)
+    {
+        Piece movingPiece = board.pieces[move.From.Col, move.From.Row]!;
+        bool isEnPassant = movingPiece is Pawn && board.EnPassantCoordinate == move.To;
+        if (board.pieces[move.To.Col, move.To.Row] != null || isEnPassant)
+            return;
+
+        if (ply < killerMoves.GetLength(0) && killerMoves[ply, 0] != move)
+        {
+            killerMoves[ply, 1] = killerMoves[ply, 0];
+            killerMoves[ply, 0] = move;
+        }
+
+        int side = board.CurrentTurn == PieceColor.White ? 0 : 1;
+        int from = move.From.Row * 8 + move.From.Col;
+        int to = move.To.Row * 8 + move.To.Col;
+        historyScores[side, from, to] = Math.Min(500_000, historyScores[side, from, to] + depth * depth);
+
     }
 
     void Store(ulong positionKey, TranspositionEntry entry)
     {
-        if (transpositionTable.Count >= MaxTranspositionEntries && !transpositionTable.ContainsKey(positionKey))
+        if (transpositionTable.Count >= MaxTranspositionEntries)
             transpositionTable.Clear();
 
         transpositionTable[positionKey] = entry;
