@@ -340,6 +340,18 @@ Available commands:
                 board.Undo();
                 break;
             }
+            if(input == "undo2" || input == "u2")
+            {
+                if(board.moveHistory.Count < 2)
+                {
+                    Console.WriteLine("No moves to undo");
+                    continue;
+                }
+
+                board.Undo();
+                board.Undo();
+                break;
+            }
             if(input == "get moves")
             {
                 Console.WriteLine();
