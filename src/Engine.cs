@@ -2,6 +2,7 @@
 public class Engine
 {
     const int MaxTranspositionEntries = 250_000;
+    const int MaxQuiescenceDepth = 6;
     const float MateScore = 100_000;
     readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new(MaxTranspositionEntries);
     readonly Move?[,] killerMoves = new Move?[128, 2];
@@ -90,9 +91,7 @@ public class Engine
         bool sideIsInCheck = GameLogic.IsCheck(board, board.CurrentTurn);
         if (depth == 0 && !sideIsInCheck)
         {
-            float score = Evaluate(board, rootSide);
-            Store(positionKey, new(depth, score, Bound.Exact, default, false));
-            return score;
+            return Quiescence(board, alpha, beta, rootSide, ply, MaxQuiescenceDepth);
         }
 
         if (depth == 0)
@@ -219,6 +218,79 @@ public class Engine
         Bound bound = result <= originalAlpha ? Bound.Upper : result >= originalBeta ? Bound.Lower : Bound.Exact;
         Store(positionKey, new(depth, result, bound, bestMove, hasBestMove));
         return result;
+    }
+
+    float Quiescence(Board board, float alpha, float beta, PieceColor rootSide, int ply, int remainingDepth)
+    {
+        bool sideIsInCheck = GameLogic.IsCheck(board, board.CurrentTurn);
+        bool maximizing = board.CurrentTurn == rootSide;
+        float standPat = Evaluate(board, rootSide);
+
+        // A checked side cannot stand pat. At the depth limit, still distinguish
+        // checkmate from a position that merely requires an evasive move.
+        if (!sideIsInCheck)
+        {
+            if (maximizing)
+            {
+                if (standPat >= beta)
+                    return standPat;
+                alpha = Math.Max(alpha, standPat);
+            }
+            else
+            {
+                if (standPat <= alpha)
+                    return standPat;
+                beta = Math.Min(beta, standPat);
+            }
+
+            if (remainingDepth == 0)
+                return standPat;
+        }
+
+        List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
+        if (legalMoves.Count == 0)
+        {
+            if (!sideIsInCheck)
+                return 0;
+
+            return board.CurrentTurn == rootSide ? -MateScore - ply : MateScore + ply;
+        }
+
+        if (remainingDepth == 0)
+            return standPat;
+
+        if (!sideIsInCheck)
+            legalMoves.RemoveAll(move => !IsTacticalMove(board, move));
+
+        if (legalMoves.Count == 0)
+            return standPat;
+
+        OrderMoves(board, legalMoves, null, ply);
+        float bestScore = sideIsInCheck
+            ? maximizing ? float.MinValue : float.MaxValue
+            : standPat;
+        foreach (Move move in legalMoves)
+        {
+            GameLogic.ApplyMove(board, move);
+            float score = Quiescence(board, alpha, beta, rootSide, ply + 1, remainingDepth - 1);
+            board.Undo();
+
+            if (maximizing)
+            {
+                bestScore = Math.Max(bestScore, score);
+                alpha = Math.Max(alpha, score);
+            }
+            else
+            {
+                bestScore = Math.Min(bestScore, score);
+                beta = Math.Min(beta, score);
+            }
+
+            if (alpha >= beta)
+                break;
+        }
+
+        return bestScore;
     }
     
     float Evaluate(Board board, PieceColor side)
@@ -394,6 +466,14 @@ public class Engine
         return board.pieces[move.To.Col, move.To.Row] == null &&
                !(movingPiece is Pawn && board.EnPassantCoordinate == move.To) &&
                !(movingPiece is Pawn && move.To.Row is 0 or 7);
+    }
+
+    static bool IsTacticalMove(Board board, Move move)
+    {
+        Piece movingPiece = board.pieces[move.From.Col, move.From.Row]!;
+        return board.pieces[move.To.Col, move.To.Row] != null ||
+               (movingPiece is Pawn && board.EnPassantCoordinate == move.To) ||
+               (movingPiece is Pawn && move.To.Row is 0 or 7);
     }
 
     void RecordCutoff(Board board, Move move, int depth, int ply)
