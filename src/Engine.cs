@@ -37,6 +37,7 @@ public class Engine
         Array.Clear(killerMoves);
         Move? bestMove = null;
         float bestScore = float.MinValue;
+        float alpha = float.MinValue;
         
         PieceColor rootSide = board.CurrentTurn;
         List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
@@ -48,7 +49,7 @@ public class Engine
             //GameLogic.ApplyMove(tempBoard, move);
             GameLogic.ApplyMove(board, move);
 
-            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, rootSide, 1);
+            float score = AlphaBeta(board, Depth - 1, alpha, float.MaxValue, rootSide, 1);
             //Console.WriteLine($"Move {move} scored {score}");
             if(score > bestScore)
             {
@@ -56,6 +57,7 @@ public class Engine
                 bestMove = move;
                 Console.WriteLine($"New best move: {move} with score {score}");
             }
+            alpha = Math.Max(alpha, score);
             board.Undo();
         }
         
@@ -93,7 +95,8 @@ public class Engine
         // Most leaf nodes are ordinary positions. Evaluating them directly avoids
         // generating and testing every legal move merely to prove they are not mate.
         // Checks are extended by one ply so a checkmate at the horizon is still seen.
-        if (depth == 0 && !GameLogic.IsCheck(board, board.CurrentTurn))
+        bool sideIsInCheck = GameLogic.IsCheck(board, board.CurrentTurn);
+        if (depth == 0 && !sideIsInCheck)
         {
             float score = Evaluate(board, rootSide);
             Store(positionKey, new(depth, score, Bound.Exact, default, false));
@@ -109,7 +112,7 @@ public class Engine
 
         if (legalMoves.Count == 0)
         {
-            float score = !GameLogic.IsCheck(board, board.CurrentTurn)
+            float score = !sideIsInCheck
                 ? 0
                 // Prefer a faster mate, and delay a forced loss when possible.
                 : board.CurrentTurn == rootSide ? -MateScore - depth : MateScore + depth;
@@ -126,10 +129,33 @@ public class Engine
         {
             float maxEval = float.MinValue;
 
-            foreach (Move move in legalMoves)
+            for (int moveIndex = 0; moveIndex < legalMoves.Count; moveIndex++)
             {
+                Move move = legalMoves[moveIndex];
+                int reduction = !sideIsInCheck && depth >= 3 && moveIndex >= 3 && IsQuietMove(board, move) ? 1 : 0;
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                float eval;
+                if (moveIndex == 0)
+                {
+                    eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                }
+                else
+                {
+                    // Principal-variation search: most later moves cannot improve
+                    // alpha, so test them with a minimal window first.
+                    if (alpha == float.MinValue)
+                    {
+                        eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                    }
+                    else
+                    {
+                        eval = AlphaBeta(board, depth - 1 - reduction, alpha, alpha + 1, rootSide, ply + 1);
+                        if (eval > alpha && reduction != 0)
+                            eval = AlphaBeta(board, depth - 1, alpha, alpha + 1, rootSide, ply + 1);
+                        if (eval > alpha && eval < beta)
+                            eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                    }
+                }
                 board.Undo();
                 if (eval > maxEval)
                 {
@@ -153,10 +179,31 @@ public class Engine
         {
             float minEval = float.MaxValue;
 
-            foreach (Move move in legalMoves)
+            for (int moveIndex = 0; moveIndex < legalMoves.Count; moveIndex++)
             {
+                Move move = legalMoves[moveIndex];
+                int reduction = !sideIsInCheck && depth >= 3 && moveIndex >= 3 && IsQuietMove(board, move) ? 1 : 0;
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                float eval;
+                if (moveIndex == 0)
+                {
+                    eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                }
+                else
+                {
+                    if (beta == float.MaxValue)
+                    {
+                        eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                    }
+                    else
+                    {
+                        eval = AlphaBeta(board, depth - 1 - reduction, beta - 1, beta, rootSide, ply + 1);
+                        if (eval < beta && reduction != 0)
+                            eval = AlphaBeta(board, depth - 1, beta - 1, beta, rootSide, ply + 1);
+                        if (eval < beta && eval > alpha)
+                            eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide, ply + 1);
+                    }
+                }
                 board.Undo();
                 if (eval < minEval)
                 {
@@ -298,6 +345,14 @@ public class Engine
         int side = board.CurrentTurn == PieceColor.White ? 0 : 1;
         return historyScores[side, move.From.Row * 8 + move.From.Col, move.To.Row * 8 + move.To.Col];
 
+    }
+
+    static bool IsQuietMove(Board board, Move move)
+    {
+        Piece movingPiece = board.pieces[move.From.Col, move.From.Row]!;
+        return board.pieces[move.To.Col, move.To.Row] == null &&
+               !(movingPiece is Pawn && board.EnPassantCoordinate == move.To) &&
+               !(movingPiece is Pawn && move.To.Row is 0 or 7);
     }
 
     void RecordCutoff(Board board, Move move, int depth, int ply)
