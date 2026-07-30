@@ -12,15 +12,7 @@ public class Engine
     {
         Depth = depth;
     }
-    static readonly Coordinate[] centerSquares =
-    {
-        new(3, 3),
-        new(3, 4),
-        new(4, 3),
-        new(4, 4)
-    };
-    
-    static readonly int[] postCastleKingColumns = [0, 1, 2, 6, 7];
+    static readonly int[] postCastleKingColumns = [2, 6];
 
     enum Bound
     {
@@ -238,8 +230,8 @@ public class Engine
         
         finalScore += GameLogic.GetMaterialBalance(board);
         finalScore += GetPositionalScore(board);
-        finalScore += GetCenterPawnScore(board, PieceColor.White);
-        finalScore -= GetCenterPawnScore(board, PieceColor.Black);
+        finalScore += GetPawnStructureScore(board);
+        finalScore += GetOpeningDevelopmentScore(board);
         finalScore += GetKingFafetyScore(board, PieceColor.White);
         finalScore -= GetKingFafetyScore(board, PieceColor.Black);
         
@@ -257,12 +249,14 @@ public class Engine
                 if (board.pieces[col, row] is not Piece piece)
                     continue;
 
-                // Centralization is useful for minor pieces and queens, and is
-                // much cheaper to evaluate than rebuilding complete attack maps.
+                // Centralization and pawn advancement make ordinary opening moves
+                // (e4/d4, Nf3/Nc3, developing bishops) preferable to shuffling.
                 float centerBonus = (3.5f - Math.Abs(col - 3.5f)) + (3.5f - Math.Abs(row - 3.5f));
                 float pieceBonus = piece switch
                 {
-                    Knight or Bishop => centerBonus * 0.015f,
+                    Pawn => (piece.Color == PieceColor.White ? row : 7 - row) * 0.015f +
+                            (col is 3 or 4 ? 0.05f : 0),
+                    Knight or Bishop => centerBonus * 0.04f,
                     Queen => centerBonus * 0.005f,
                     _ => 0
                 };
@@ -273,35 +267,82 @@ public class Engine
         return score;
     }
     
-    float GetCenterPawnScore(Board board, PieceColor side)
+    static float GetPawnStructureScore(Board board)
     {
         float score = 0;
-        
-        foreach (var coord in centerSquares)
+
+        for (int col = 0; col < 8; col++)
         {
-            if (board.pieces[coord.Col, coord.Row] is Pawn pawn && pawn.Color == side)
-                score += 0.02f;
+            int whitePawns = 0;
+            int blackPawns = 0;
+            for (int row = 0; row < 8; row++)
+            {
+                if (board.pieces[col, row] is not Pawn pawn)
+                    continue;
+
+                if (pawn.Color == PieceColor.White)
+                    whitePawns++;
+                else
+                    blackPawns++;
+            }
+
+            // Doubled pawns are a concrete long-term weakness.
+            score -= Math.Max(0, whitePawns - 1) * 0.08f;
+            score += Math.Max(0, blackPawns - 1) * 0.08f;
         }
-        
+
         return score;
+    }
+
+    static float GetOpeningDevelopmentScore(Board board)
+    {
+        if (board.FullmoveCounter > 12)
+            return 0;
+
+        float score = 0;
+        score += IsPieceAt<Knight>(board, 1, 0, PieceColor.White) ? -0.15f : 0;
+        score += IsPieceAt<Knight>(board, 6, 0, PieceColor.White) ? -0.15f : 0;
+        score += IsPieceAt<Bishop>(board, 2, 0, PieceColor.White) ? -0.12f : 0;
+        score += IsPieceAt<Bishop>(board, 5, 0, PieceColor.White) ? -0.12f : 0;
+        score += IsPieceAt<Knight>(board, 1, 7, PieceColor.Black) ? 0.15f : 0;
+        score += IsPieceAt<Knight>(board, 6, 7, PieceColor.Black) ? 0.15f : 0;
+        score += IsPieceAt<Bishop>(board, 2, 7, PieceColor.Black) ? 0.12f : 0;
+        score += IsPieceAt<Bishop>(board, 5, 7, PieceColor.Black) ? 0.12f : 0;
+
+        // Moving the queen before developing minor pieces is usually wasteful.
+        if (board.FullmoveCounter <= 6)
+        {
+            if (!IsPieceAt<Queen>(board, 3, 0, PieceColor.White))
+                score -= 0.12f;
+            if (!IsPieceAt<Queen>(board, 3, 7, PieceColor.Black))
+                score += 0.12f;
+        }
+
+        return score;
+    }
+
+    static bool IsPieceAt<TPiece>(Board board, int col, int row, PieceColor color)
+        where TPiece : Piece
+    {
+        return board.pieces[col, row] is TPiece piece && piece.Color == color;
     }
     
     float GetKingFafetyScore(Board board, PieceColor side)
     {
-        if(side == PieceColor.White)
+        int homeRow = side == PieceColor.White ? 0 : 7;
+        foreach (int col in postCastleKingColumns)
         {
-            foreach(int col in postCastleKingColumns)
+            if (board.pieces[col, homeRow] is King king && king.Color == side)
             {
-                if(board.pieces[col, 0] is King king && king.Color == PieceColor.White)
-                    return 0.15f;
-            }
-        }
-        else
-        {
-            foreach(int col in postCastleKingColumns)
-            {
-                if(board.pieces[col, 7] is King king && king.Color == PieceColor.Black)
-                    return 0.15f;
+                float score = 0.35f;
+                int pawnRow = side == PieceColor.White ? 1 : 6;
+                int shieldStart = col == 6 ? 5 : 0;
+                for (int shieldCol = shieldStart; shieldCol < shieldStart + 3; shieldCol++)
+                {
+                    if (board.pieces[shieldCol, pawnRow] is Pawn pawn && pawn.Color == side)
+                        score += 0.05f;
+                }
+                return score;
             }
         }
 
