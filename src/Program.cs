@@ -2,7 +2,7 @@
 class Program
 {
     public static bool UseUnicodeSymbols { get; set; } = true;
-    static int defaultDepth = 4;
+    static int defaultDepth = 8;
     
     const string HelpText = @"
 Available commands:
