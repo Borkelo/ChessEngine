@@ -24,7 +24,7 @@ public class Engine
         
         PieceColor rootSide = board.CurrentTurn;
         List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
-        legalMoves.Sort((a, b) => ScoreMove(board, b).CompareTo(ScoreMove(board, a)));
+        OrderMoves(board, legalMoves);
         
         foreach(Move move in legalMoves)
         {
@@ -32,7 +32,7 @@ public class Engine
             //GameLogic.ApplyMove(tempBoard, move);
             GameLogic.ApplyMove(board, move);
 
-            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, board.CurrentTurn, rootSide);
+            float score = AlphaBeta(board, Depth - 1, float.MinValue, float.MaxValue, rootSide);
             //Console.WriteLine($"Move {move} scored {score}");
             if(score > bestScore)
             {
@@ -47,23 +47,35 @@ public class Engine
         return bestMove ?? throw new Exception("No legal moves found");
     }
     
-    float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor side, PieceColor rootSide)
+    float AlphaBeta(Board board, int depth, float alpha, float beta, PieceColor rootSide)
     {
-        if(depth == 0 || GameLogic.IsGameOver(board))
+        // Generate once per node. Previously, IsGameOver and Evaluate could each
+        // generate the full legal-move list before the search generated it again.
+        List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
+
+        if (legalMoves.Count == 0)
+        {
+            if (!GameLogic.IsCheck(board, board.CurrentTurn))
+                return 0;
+
+            // Prefer a faster mate, and delay a forced loss when possible.
+            const float mateScore = 100000;
+            return board.CurrentTurn == rootSide ? -mateScore - depth : mateScore + depth;
+        }
+
+        if (depth == 0)
             return Evaluate(board, rootSide);
-        
-        if(side == rootSide)
+
+        OrderMoves(board, legalMoves);
+
+        if (board.CurrentTurn == rootSide)
         {
             float maxEval = float.MinValue;
-            
-            List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
-            legalMoves.Sort((a, b) => ScoreMove(board, b).CompareTo(ScoreMove(board, a)));
-            
-            foreach(Move move in legalMoves)
+
+            foreach (Move move in legalMoves)
             {
-                //Board tempboard = board.Clone();
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, board.CurrentTurn, rootSide);
+                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide);
                 board.Undo();
                 maxEval = Math.Max(maxEval, eval);
                 alpha = Math.Max(alpha, eval);                 
@@ -78,15 +90,11 @@ public class Engine
         else
         {
             float minEval = float.MaxValue;
-            
-            List<Move> legalMoves = GameLogic.GetAllLegalMoves(board).ToList();
-            legalMoves.Sort((a, b) => ScoreMove(board, b).CompareTo(ScoreMove(board, a)));
-            
-            foreach(Move move in legalMoves)
+
+            foreach (Move move in legalMoves)
             {
-                //Board tempboard = board.Clone();
                 GameLogic.ApplyMove(board, move);
-                float eval = AlphaBeta(board, depth - 1, alpha, beta, board.CurrentTurn, rootSide);
+                float eval = AlphaBeta(board, depth - 1, alpha, beta, rootSide);
                 board.Undo();
                 minEval = Math.Min(minEval, eval);
                 beta = Math.Min(beta, eval);
@@ -102,12 +110,6 @@ public class Engine
     
     float Evaluate(Board board, PieceColor side)
     {
-        if(GameLogic.IsCheckmate(board))
-            return board.CurrentTurn == side ? -10000 : 10000;
-            
-        if(GameLogic.IsStalemate(board))
-            return 0;
-
         float finalScore = 0;
         
         //Coordinate[] squaresAttackedByWhite = GameLogic.GetAllAttackedSquares(board, PieceColor.White).ToArray();
@@ -170,15 +172,26 @@ public class Engine
         return 0;
     }
 
-    float ScoreMove(Board board, Move move)
+    void OrderMoves(Board board, List<Move> moves)
     {
-        if(board.pieces[move.To.Col, move.To.Row] == null)
-            return 0;
+        moves.Sort((a, b) => ScoreMove(board, b).CompareTo(ScoreMove(board, a)));
+    }
 
-        //example white pawn captures black knight: -1 + 5 = 4
-  
-        float captureBalance = -board.pieces[move.From.Col, move.From.Row]!.Value - board.pieces[move.To.Col, move.To.Row]!.Value;
+    static int ScoreMove(Board board, Move move)
+    {
+        Piece movingPiece = board.pieces[move.From.Col, move.From.Row]!;
+        Piece? capturedPiece = board.pieces[move.To.Col, move.To.Row];
 
-        return board.CurrentTurn == PieceColor.White ? captureBalance + 1 : -captureBalance + 1; //add 1 so that equal captures score over non-captures
+        // En passant captures a pawn although the destination square is empty.
+        int capturedValue = capturedPiece == null
+            ? movingPiece is Pawn && board.EnPassantCoordinate == move.To ? 1 : 0
+            : Math.Abs(capturedPiece.Value);
+
+        int score = capturedValue == 0 ? 0 : capturedValue * 100 - Math.Abs(movingPiece.Value);
+
+        if (movingPiece is Pawn && move.To.Row is 0 or 7)
+            score += 800;
+
+        return score;
     }
 }
