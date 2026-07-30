@@ -326,7 +326,7 @@ public class Engine
     {
         return board.pieces[col, row] is TPiece piece && piece.Color == color;
     }
-    
+
     float GetKingFafetyScore(Board board, PieceColor side)
     {
         int homeRow = side == PieceColor.White ? 0 : 7;
