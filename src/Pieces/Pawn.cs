@@ -6,7 +6,7 @@ public class Pawn : Piece
     
     public override IEnumerable<Move> GetPseudoLegalMoves(Board board, Coordinate from)
     {
-        Coordinate offset = board.CurrentTurn == PieceColor.White ? new(0, 1) : new(0, -1);
+        Coordinate offset = Color == PieceColor.White ? new(0, 1) : new(0, -1);
         
         Coordinate oneForward = from + offset;
         
@@ -44,7 +44,7 @@ public class Pawn : Piece
     //Pawn and king are the only piece that attacks differently than it moves, thus this method is needed
     public override IEnumerable<Move> GetAttackingSquares(Board board, Coordinate from)
     {
-        Coordinate offset = board.CurrentTurn == PieceColor.White ? new(0, 1) : new(0, -1);
+        Coordinate offset = Color == PieceColor.White ? new(0, 1) : new(0, -1);
         
         Coordinate oneForward = from + offset;
         

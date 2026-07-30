@@ -1,5 +1,17 @@
 public static class GameLogic
 {
+    static readonly Coordinate[] knightOffsets =
+    [
+        new(1, 2), new(2, 1), new(-1, 2), new(-2, 1),
+        new(1, -2), new(2, -1), new(-1, -2), new(-2, -1)
+    ];
+
+    static readonly Coordinate[] kingOffsets =
+    [
+        new(0, 1), new(0, -1), new(1, 0), new(-1, 0),
+        new(1, 1), new(1, -1), new(-1, 1), new(-1, -1)
+    ];
+
     public static void ApplyMove(Board board, Move move, char promotionPieceSymbol = 'q') //THIS METHOD APPLIES MOVE EVEN IF ITS ILLEGAL
     {
 
@@ -87,18 +99,20 @@ public static class GameLogic
         return true;
     }
     
-    //returns if given side is checked
-    public static bool IsCheck(Board board, PieceColor sideChecked)//todo check from kings position towards sliding direction + knight positions
+    // Returns whether the specified side's king is attacked.  Starting at the king
+    // avoids generating every attack square for the opposing side.
+    public static bool IsCheck(Board board, PieceColor sideChecked)
     {
-        PieceColor sideChecking = Piece.OppositeColor(sideChecked);
-        foreach(Coordinate attackedSquare in GetAllAttackedSquares(board, sideChecking))
+        for (int col = 0; col < 8; col++)
         {
-            if(board.pieces[attackedSquare.Col, attackedSquare.Row] is King king && king.Color == sideChecked)
+            for (int row = 0; row < 8; row++)
             {
-                return true;
+                if (board.pieces[col, row] is King king && king.Color == sideChecked)
+                    return IsSquareAttacked(board, new Coordinate(col, row), Piece.OppositeColor(sideChecked));
             }
         }
-        return false;
+
+        throw new InvalidOperationException("A valid chess position must contain both kings.");
     }
     
     public static bool IsStalemate(Board board)
@@ -133,14 +147,52 @@ public static class GameLogic
     
     public static bool IsSquareAttacked(Board board, Coordinate coordinate, PieceColor attackingSide)
     {
-        foreach(Coordinate attackedSquare in GetAllAttackedSquares(board, attackingSide))
+        // Pawns attack one rank forward from their own perspective, so their
+        // possible source squares are one rank behind the target square.
+        int pawnSourceRow = coordinate.Row + (attackingSide == PieceColor.White ? -1 : 1);
+        if (IsEnemyPieceAt<Pawn>(board, coordinate.Col - 1, pawnSourceRow, attackingSide) ||
+            IsEnemyPieceAt<Pawn>(board, coordinate.Col + 1, pawnSourceRow, attackingSide))
+            return true;
+
+        foreach (Coordinate offset in knightOffsets)
         {
-            if(attackedSquare == coordinate)
-            {
+            if (IsEnemyPieceAt<Knight>(board, coordinate.Col + offset.Col, coordinate.Row + offset.Row, attackingSide))
                 return true;
+        }
+
+        foreach (Coordinate offset in kingOffsets)
+        {
+            if (IsEnemyPieceAt<King>(board, coordinate.Col + offset.Col, coordinate.Row + offset.Row, attackingSide))
+                return true;
+        }
+
+        foreach (Coordinate direction in kingOffsets)
+        {
+            bool orthogonal = direction.Col == 0 || direction.Row == 0;
+            for (int col = coordinate.Col + direction.Col, row = coordinate.Row + direction.Row;
+                 col is >= 0 and < 8 && row is >= 0 and < 8;
+                 col += direction.Col, row += direction.Row)
+            {
+                Piece? piece = board.pieces[col, row];
+                if (piece == null)
+                    continue;
+
+                if (piece.Color == attackingSide &&
+                    (piece is Queen || (orthogonal ? piece is Rook : piece is Bishop)))
+                    return true;
+
+                break;
             }
         }
+
         return false;
+    }
+
+    static bool IsEnemyPieceAt<TPiece>(Board board, int col, int row, PieceColor attackingSide)
+        where TPiece : Piece
+    {
+        return col is >= 0 and < 8 && row is >= 0 and < 8 &&
+               board.pieces[col, row] is TPiece piece && piece.Color == attackingSide;
     }
     
     public static IEnumerable<Coordinate> GetAllAttackedSquares(Board board, PieceColor attackingSide)
